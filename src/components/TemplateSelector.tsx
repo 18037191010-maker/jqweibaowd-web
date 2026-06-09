@@ -1,6 +1,6 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useRef } from "react";
 import { DocumentTemplate } from "../types";
-import { Search, FolderOpen, FileCheck, FileCode, Edit3, Plus, Trash2 } from "lucide-react";
+import { Search, FolderOpen, FileCheck, FileCode, Edit3, Plus, Trash2, Share2, Download, Upload, Check } from "lucide-react";
 
 interface TemplateSelectorProps {
   templates: DocumentTemplate[];
@@ -8,6 +8,7 @@ interface TemplateSelectorProps {
   onSelectTemplate: (template: DocumentTemplate) => void;
   onOpenCustomWizard: () => void;
   onDeleteTemplate: (id: string) => void;
+  onSaveTemplate: (template: DocumentTemplate) => Promise<void> | void;
 }
 
 export default function TemplateSelector({
@@ -16,10 +17,14 @@ export default function TemplateSelector({
   onSelectTemplate,
   onOpenCustomWizard,
   onDeleteTemplate,
+  onSaveTemplate,
 }: TemplateSelectorProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [activeCategory, setActiveCategory] = useState<string>("全部");
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const categories = ["全部", "行政人事", "商业合同", "日常办公", "自定义"];
 
@@ -33,26 +38,131 @@ export default function TemplateSelector({
     });
   }, [templates, searchTerm, activeCategory]);
 
+  const handleCopyShareLink = (e: React.MouseEvent, template: DocumentTemplate) => {
+    e.stopPropagation();
+    e.preventDefault();
+    try {
+      const templateStr = JSON.stringify(template);
+      const encoded = btoa(encodeURIComponent(templateStr));
+      const shareUrl = `${window.location.origin}${window.location.pathname}?template=${encoded}`;
+      
+      navigator.clipboard.writeText(shareUrl).then(() => {
+        setCopiedId(template.id);
+        setTimeout(() => setCopiedId(null), 2000);
+      });
+    } catch (err) {
+      console.error("生成分享链接失败:", err);
+      alert("生成分享链接失败！");
+    }
+  };
+
+  const handleExportTemplates = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const customTemplates = templates.filter((t) => t.category === "自定义");
+    if (customTemplates.length === 0) {
+      alert("没有可导出的自定义模板。请先在下方创建或通过 URL 导入模板。");
+      return;
+    }
+    try {
+      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(customTemplates, null, 2));
+      const downloadAnchor = document.createElement("a");
+      downloadAnchor.setAttribute("href", dataStr);
+      downloadAnchor.setAttribute("download", `custom_templates_backup_${new Date().toISOString().split("T")[0]}.json`);
+      document.body.appendChild(downloadAnchor);
+      downloadAnchor.click();
+      downloadAnchor.remove();
+    } catch (err) {
+      console.error("导出配置文件失败:", err);
+    }
+  };
+
+  const handleImportClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    fileInputRef.current?.click();
+  };
+
+  const handleImportFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const text = event.target?.result;
+        if (typeof text !== "string") return;
+        const parsed = JSON.parse(text);
+        const importedArray = Array.isArray(parsed) ? parsed : [parsed];
+
+        let successCount = 0;
+        for (const item of importedArray) {
+          if (item.id && item.title && Array.isArray(item.fields)) {
+            item.category = "自定义"; // Keep inside user custom category
+            await onSaveTemplate(item);
+            successCount++;
+          }
+        }
+
+        if (successCount > 0) {
+          alert(`🎉 成功导入 ${successCount} 个自定义模板！`);
+        } else {
+          alert("导入失败：文件里的 JSON 数据不包含标准的模板结构字段。");
+        }
+      } catch (err) {
+        console.error("解析文件失败:", err);
+        alert("导入解析失败，请确保导入的是我们合法导出的拼音或 JSON 配置文件！");
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  };
+
   return (
     <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs" id="template-selector">
-      <div className="mb-4 flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
-        <div>
+      <div className="mb-4 flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+        <div className="min-w-0 flex-1">
           <h2 className="font-sans text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
             <FolderOpen className="h-4 w-4 text-blue-600" />
             1. 选择或导入文档模板
           </h2>
           <p className="text-xs text-slate-550 mt-0.5">
-            选择对应的规范模板，或直接录入段落交由 AI 分析定制。
+            选择现有模板，或导入配置文件、点击新增通过 Word 文件智能解析。
           </p>
         </div>
-        <button
-          onClick={onOpenCustomWizard}
-          className="inline-flex items-center gap-1.5 rounded bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-700 hover:bg-blue-100 transition-all pointer-events-auto cursor-pointer border border-blue-200"
-          id="btn-custom-import"
-        >
-          <Plus className="h-3.5 w-3.5" />
-          新增模板
-        </button>
+        <div className="flex flex-wrap items-center gap-1.5 self-start shrink-0">
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleImportFileChange}
+            accept=".json"
+            className="hidden"
+          />
+          <button
+            onClick={handleImportClick}
+            className="inline-flex items-center gap-1 rounded bg-slate-50 hover:bg-slate-100 px-2.5 py-1.5 text-xs font-bold text-slate-700 transition-all cursor-pointer border border-slate-200"
+            title="导入自定义模板配置文件 (.json)"
+          >
+            <Upload className="h-3 w-3" />
+            导入
+          </button>
+          <button
+            onClick={handleExportTemplates}
+            className="inline-flex items-center gap-1 rounded bg-slate-50 hover:bg-slate-100 px-2.5 py-1.5 text-xs font-bold text-slate-700 transition-all cursor-pointer border border-slate-200"
+            title="备份导出所有的自定义模板 (.json)"
+          >
+            <Download className="h-3 w-3" />
+            备份
+          </button>
+          <button
+            onClick={onOpenCustomWizard}
+            className="inline-flex items-center gap-1 rounded bg-blue-50 px-2.5 py-1.5 text-xs font-bold text-blue-700 hover:bg-blue-100 transition-all pointer-events-auto cursor-pointer border border-blue-200"
+            id="btn-custom-import"
+          >
+            <Plus className="h-3 w-3" />
+            新增模板
+          </button>
+        </div>
       </div>
 
       {/* Search Input */}
@@ -174,18 +284,36 @@ export default function TemplateSelector({
                         </button>
                       </div>
                     ) : (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          e.preventDefault();
-                          setConfirmDeleteId(template.id);
-                        }}
-                        className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-rose-50 rounded transition-all cursor-pointer"
-                        title="删除该自定义模板"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={(e) => handleCopyShareLink(e, template)}
+                          className={`p-1.5 rounded transition-all cursor-pointer ${
+                            copiedId === template.id
+                              ? "text-emerald-600 bg-emerald-55"
+                              : "text-slate-400 hover:text-blue-600 hover:bg-blue-50"
+                          }`}
+                          title={copiedId === template.id ? "分享链接已复制！" : "复制此模板的极速免登录分享链接"}
+                        >
+                          {copiedId === template.id ? (
+                            <Check className="h-3.5 w-3.5" />
+                          ) : (
+                            <Share2 className="h-3.5 w-3.5" />
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            e.preventDefault();
+                            setConfirmDeleteId(template.id);
+                          }}
+                          className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-rose-50 rounded transition-all cursor-pointer"
+                          title="删除该自定义模板"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
                     )}
                   </div>
                 )}

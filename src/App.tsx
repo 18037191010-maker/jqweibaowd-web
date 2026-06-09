@@ -45,9 +45,25 @@ export default function App() {
   const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
   const [isCustomWizardOpen, setIsCustomWizardOpen] = useState(false);
 
-  // 1. Load custom templates from backend and local storage on initialization
+  // 1. Load custom templates from URL link, backend, and local storage on initialization
   useEffect(() => {
-    async function loadTemplates() {
+    async function loadTemplatesAndSharing() {
+      // Check query parameter for shared template
+      let sharedTemplate: DocumentTemplate | null = null;
+      try {
+        const urlParams = new URLSearchParams(window.location.search);
+        const sharedParam = urlParams.get("template");
+        if (sharedParam) {
+          const decodedJson = decodeURIComponent(atob(sharedParam));
+          const parsed = JSON.parse(decodedJson);
+          if (parsed && parsed.id && parsed.title && Array.isArray(parsed.fields)) {
+            sharedTemplate = parsed as DocumentTemplate;
+          }
+        }
+      } catch (err) {
+        console.error("Failed to parse shared template from URL:", err);
+      }
+
       let backendTemplates: DocumentTemplate[] = [];
       try {
         const res = await fetch("/api/templates");
@@ -75,9 +91,13 @@ export default function App() {
       // Merge and deduplicate
       setTemplates((prev) => {
         const existingIds = new Set(DEFAULT_TEMPLATES.map((t) => t.id));
-        const mergedList = [...backendTemplates, ...localTemplates];
+        const mergedList: DocumentTemplate[] = [];
+        if (sharedTemplate) {
+          mergedList.push(sharedTemplate);
+        }
+        mergedList.push(...backendTemplates, ...localTemplates);
+
         const uniqueCustom: DocumentTemplate[] = [];
-        
         mergedList.forEach((t) => {
           if (!existingIds.has(t.id)) {
             existingIds.add(t.id);
@@ -85,12 +105,41 @@ export default function App() {
           }
         });
 
+        // If sharedTemplate was imported, automatically save it to memory/local storage fallback for future use
+        if (sharedTemplate) {
+          try {
+            const currentSaved = localStorage.getItem("doc_generator_custom_templates");
+            let customList: DocumentTemplate[] = currentSaved ? JSON.parse(currentSaved) : [];
+            if (!customList.some((t) => t.id === sharedTemplate!.id)) {
+              customList.push(sharedTemplate!);
+              localStorage.setItem("doc_generator_custom_templates", JSON.stringify(customList));
+            }
+          } catch (e) {}
+
+          // Also try saving to server if backend is alive
+          fetch("/api/templates", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(sharedTemplate),
+          }).catch(() => {});
+        }
+
         // Newly parsed / custom templates placed on top of default ones
         return [...uniqueCustom, ...DEFAULT_TEMPLATES];
       });
+
+      // Handle selecting and notifying of shared template
+      if (sharedTemplate) {
+        setSelectedTemplate(sharedTemplate);
+        // Wipe URL query param so page refreshes/reloads won't trigger import again
+        const url = new URL(window.location.href);
+        url.searchParams.delete("template");
+        window.history.replaceState({}, document.title, url.toString());
+        alert(`🎉 成功导入分享的模板: 「${sharedTemplate.title}」！已自动载入并保存至您的自定义模板列表中。`);
+      }
     }
 
-    loadTemplates();
+    loadTemplatesAndSharing();
   }, []);
 
   // 2. Set default values whenever selectedTemplate changes
@@ -235,6 +284,7 @@ export default function App() {
               onSelectTemplate={handleSelectTemplate}
               onOpenCustomWizard={() => setIsCustomWizardOpen(true)}
               onDeleteTemplate={handleDeleteTemplate}
+              onSaveTemplate={handleSaveCustomTemplate}
             />
 
             <VariableInputForm
