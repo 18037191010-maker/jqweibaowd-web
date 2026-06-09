@@ -1,0 +1,6 @@
+{
+  "name": "Document Generator",
+  "description": "根据选定的文档模板与用户输入生成专业文档，并一键导出为 Microsoft Word 格式进行下载与打印，支持 AI 辅助智能填表与自定义模板解析。",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
