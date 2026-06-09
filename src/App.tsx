@@ -8,34 +8,89 @@ import { DEFAULT_TEMPLATES } from "./templatesData";
 import { DocumentTemplate } from "./types";
 
 export default function App() {
-  const [templates, setTemplates] = useState<DocumentTemplate[]>(DEFAULT_TEMPLATES);
-  const [selectedTemplate, setSelectedTemplate] = useState<DocumentTemplate>(DEFAULT_TEMPLATES[0]);
+  const [templates, setTemplates] = useState<DocumentTemplate[]>(() => {
+    let localTemplates: DocumentTemplate[] = [];
+    try {
+      const saved = localStorage.getItem("doc_generator_custom_templates");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          localTemplates = parsed;
+        }
+      }
+    } catch (err) {
+      console.error("Failed to load initial custom templates from localStorage:", err);
+    }
+    const existingIds = new Set(DEFAULT_TEMPLATES.map((t) => t.id));
+    const uniqueCustom = localTemplates.filter((t) => !existingIds.has(t.id));
+    return [...uniqueCustom, ...DEFAULT_TEMPLATES];
+  });
+  
+  const [selectedTemplate, setSelectedTemplate] = useState<DocumentTemplate>(() => {
+    // If we have custom templates, let's default to the first template in our initialized array
+    let localTemplates: DocumentTemplate[] = [];
+    try {
+      const saved = localStorage.getItem("doc_generator_custom_templates");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          localTemplates = parsed;
+        }
+      }
+    } catch (e) {}
+    const existingIds = new Set(DEFAULT_TEMPLATES.map((t) => t.id));
+    const uniqueCustom = localTemplates.filter((t) => !existingIds.has(t.id));
+    return uniqueCustom.length > 0 ? uniqueCustom[0] : DEFAULT_TEMPLATES[0];
+  });
   const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
   const [isCustomWizardOpen, setIsCustomWizardOpen] = useState(false);
 
-  // 1. Load custom templates from localStorage on initialization
+  // 1. Load custom templates from backend and local storage on initialization
   useEffect(() => {
-    const saved = localStorage.getItem("doc_generator_custom_templates");
-    if (saved) {
+    async function loadTemplates() {
+      let backendTemplates: DocumentTemplate[] = [];
       try {
-        const parsed: DocumentTemplate[] = JSON.parse(saved);
-        if (Array.isArray(parsed)) {
-          setTemplates((prev) => {
-            const existingIds = new Set(DEFAULT_TEMPLATES.map((t) => t.id));
-            const uniqueCustom = parsed.filter((t) => {
-              if (existingIds.has(t.id)) {
-                return false;
-              }
-              existingIds.add(t.id);
-              return true;
-            });
-            return [...DEFAULT_TEMPLATES, ...uniqueCustom];
-          });
+        const res = await fetch("/api/templates");
+        if (res.ok) {
+          backendTemplates = await res.json();
         }
       } catch (err) {
-        console.error("Failed to parse stored custom templates:", err);
+        console.error("Failed to fetch templates from backend:", err);
       }
+
+      // Also get localStorage fallback as redundancy
+      let localTemplates: DocumentTemplate[] = [];
+      const saved = localStorage.getItem("doc_generator_custom_templates");
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) {
+            localTemplates = parsed;
+          }
+        } catch (err) {
+          console.error("Failed to parse stored custom templates:", err);
+        }
+      }
+
+      // Merge and deduplicate
+      setTemplates((prev) => {
+        const existingIds = new Set(DEFAULT_TEMPLATES.map((t) => t.id));
+        const mergedList = [...backendTemplates, ...localTemplates];
+        const uniqueCustom: DocumentTemplate[] = [];
+        
+        mergedList.forEach((t) => {
+          if (!existingIds.has(t.id)) {
+            existingIds.add(t.id);
+            uniqueCustom.push(t);
+          }
+        });
+
+        // Newly parsed / custom templates placed on top of default ones
+        return [...uniqueCustom, ...DEFAULT_TEMPLATES];
+      });
     }
+
+    loadTemplates();
   }, []);
 
   // 2. Set default values whenever selectedTemplate changes
@@ -78,36 +133,47 @@ export default function App() {
     });
   };
 
-  const handleSaveCustomTemplate = (newTemplate: DocumentTemplate) => {
-    // Save to State (ensure no duplicate IDs)
+  const handleSaveCustomTemplate = async (newTemplate: DocumentTemplate) => {
+    // 1. Save to state immediately for great UX (brings/keeps custom templates on top)
     setTemplates((prev) => {
-      if (prev.some((t) => t.id === newTemplate.id)) {
-        return prev;
-      }
-      return [...prev, newTemplate];
+      const filtered = prev.filter((t) => t.id !== newTemplate.id);
+      return [newTemplate, ...filtered];
     });
+
+    // Active switch to this new parsed custom template
+    setSelectedTemplate(newTemplate);
+
+    // 2. Save to backend (Cloud/Shared)
+    try {
+      await fetch("/api/templates", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newTemplate),
+      });
+    } catch (err) {
+      console.error("Failed to sync template to database:", err);
+    }
     
-    // Save to localStorage
+    // 3. Save to localStorage fallback
     try {
       const saved = localStorage.getItem("doc_generator_custom_templates");
       let customList: DocumentTemplate[] = [];
       if (saved) {
         customList = JSON.parse(saved);
       }
-      // Ensure we don't save duplicate template ID in localStorage either
-      if (!customList.some((t) => t.id === newTemplate.id)) {
+      const existingIdx = customList.findIndex((t) => t.id === newTemplate.id);
+      if (existingIdx >= 0) {
+        customList[existingIdx] = newTemplate;
+      } else {
         customList.push(newTemplate);
-        localStorage.setItem("doc_generator_custom_templates", JSON.stringify(customList));
       }
+      localStorage.setItem("doc_generator_custom_templates", JSON.stringify(customList));
     } catch (err) {
       console.error("Failed to store custom template inside localStorage:", err);
     }
-
-    // Active switch to this new parsed custom template
-    setSelectedTemplate(newTemplate);
   };
 
-  const handleDeleteTemplate = (idToDelete: string) => {
+  const handleDeleteTemplate = async (idToDelete: string) => {
     // 1. Filter out from state
     setTemplates((prev) => {
       const updated = prev.filter((t) => t.id !== idToDelete);
@@ -119,7 +185,16 @@ export default function App() {
       return updated;
     });
 
-    // 3. Remove/Filter out of localStorage
+    // 3. Delete from backend database
+    try {
+      await fetch(`/api/templates/${idToDelete}`, {
+        method: "DELETE",
+      });
+    } catch (err) {
+      console.error("Failed to delete template from database:", err);
+    }
+
+    // 4. Remove/Filter out of localStorage fallback
     try {
       const saved = localStorage.getItem("doc_generator_custom_templates");
       if (saved) {

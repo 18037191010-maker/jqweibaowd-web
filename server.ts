@@ -4,11 +4,36 @@ import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
 import mammoth from "mammoth";
+import fs from "fs";
 
 dotenv.config();
 
 const app = express();
 const PORT = 3000;
+
+const TEMPLATES_FILE = path.join(process.cwd(), "custom_templates.json");
+
+// Helper to read templates
+function readCustomTemplates(): any[] {
+  try {
+    if (fs.existsSync(TEMPLATES_FILE)) {
+      const data = fs.readFileSync(TEMPLATES_FILE, "utf-8");
+      return JSON.parse(data) || [];
+    }
+  } catch (error) {
+    console.error("Error reading custom templates from file:", error);
+  }
+  return [];
+}
+
+// Helper to write templates
+function writeCustomTemplates(templates: any[]) {
+  try {
+    fs.writeFileSync(TEMPLATES_FILE, JSON.stringify(templates, null, 2), "utf-8");
+  } catch (error) {
+    console.error("Error writing custom templates to file:", error);
+  }
+}
 
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
@@ -34,6 +59,50 @@ function getGeminiClient() {
 // API endpoint to verify connection
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok", time: new Date().toISOString() });
+});
+
+// Get all custom templates
+app.get("/api/templates", (req, res) => {
+  const templates = readCustomTemplates();
+  res.json(templates);
+});
+
+// Save (create or update) a custom template
+app.post("/api/templates", (req, res) => {
+  const template = req.body;
+  if (!template || !template.id || !template.title || !Array.isArray(template.fields)) {
+    return res.status(400).json({ error: "Invalid template format." });
+  }
+
+  const templates = readCustomTemplates();
+  const index = templates.findIndex((t: any) => t.id === template.id);
+  if (index >= 0) {
+    templates[index] = template;
+  } else {
+    templates.push(template);
+  }
+
+  writeCustomTemplates(templates);
+  res.json({ success: true, template });
+});
+
+// Delete a custom template
+app.delete("/api/templates/:id", (req, res) => {
+  const { id } = req.params;
+  if (!id) {
+    return res.status(400).json({ error: "Template ID is required." });
+  }
+
+  const templates = readCustomTemplates();
+  const initialCount = templates.length;
+  const filtered = templates.filter((t: any) => t.id !== id);
+
+  if (filtered.length !== initialCount) {
+    writeCustomTemplates(filtered);
+    res.json({ success: true, deletedId: id });
+  } else {
+    res.status(404).json({ error: "Template not found." });
+  }
 });
 
 // 1. High-reliability endpoint to extract text content from Word (.docx) file uploads

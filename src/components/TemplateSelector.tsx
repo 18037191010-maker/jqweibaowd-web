@@ -116,8 +116,13 @@ export default function TemplateSelector({
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between gap-1.5">
-                      <span className="text-xs font-bold text-slate-700 truncate">
-                        {template.title}
+                      <span className="text-xs font-bold text-slate-700 truncate flex items-center gap-1.5">
+                        <span className="truncate">{template.title}</span>
+                        {template.category !== "自定义" && (
+                          <span className="text-[10px] font-medium text-amber-700 bg-amber-50 px-1 py-0.5 rounded shrink-0 border border-amber-100">
+                            示例
+                          </span>
+                        )}
                       </span>
                       <span
                         className={`text-[10px] px-1.5 py-0.5 rounded font-bold shrink-0 ${
