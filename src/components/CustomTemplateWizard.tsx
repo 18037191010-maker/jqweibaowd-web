@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
+import mammoth from "mammoth";
 import { DocumentTemplate, TemplateField } from "../types";
 import { 
   X, 
@@ -148,30 +149,22 @@ export default function CustomTemplateWizard({
 
           setDetectedImages(extractedImgs);
 
-          // 2. Convert base64 to send to backend Mammoth API
+          // 2. High-performance client-side Mammoth text and html conversion
+          const textResult = await mammoth.extractRawText({ arrayBuffer });
+          const htmlResult = await mammoth.convertToHtml({ arrayBuffer });
+          
+          const docText = textResult.value || "";
+          setRawText(docText);
+          setUploadedHtml(htmlResult.value || null);
+
+          // Build local base64 for template state download
           const docBytes = new Uint8Array(arrayBuffer);
           let binary = "";
           for (let i = 0; i < docBytes.byteLength; i++) {
             binary += String.fromCharCode(docBytes[i]);
           }
-          const base64ForServer = window.btoa(binary);
-          setUploadedDocxBase64(base64ForServer);
-
-          // Contact backend for high-fidelity Mammoth text and html conversion
-          const response = await fetch("/api/parse-word", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ base64: base64ForServer }),
-          });
-
-          if (!response.ok) {
-            throw new Error("服务端解析 Office Word 模板失败");
-          }
-
-          const resData = await response.json();
-          const docText = resData.text || "";
-          setRawText(docText);
-          setUploadedHtml(resData.html || null);
+          const base64ForTemplate = window.btoa(binary);
+          setUploadedDocxBase64(base64ForTemplate);
 
           // Scan placeholders
           const detectedVars = scanPlaceholders(docText);

@@ -51,7 +51,7 @@ export default function TemplateSelector({
           id="btn-custom-import"
         >
           <Plus className="h-3.5 w-3.5" />
-          AI 解析自定义模板
+          新增模板
         </button>
       </div>
 

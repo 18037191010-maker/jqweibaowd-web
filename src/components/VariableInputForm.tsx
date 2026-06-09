@@ -41,6 +41,9 @@ export default function VariableInputForm({
       });
 
       if (!res.ok) {
+        if (res.status === 404) {
+          throw new Error("AI 润色优化暂不可用（发布在 Netlify 等静态托管平台时未启用服务端 API，但全部模板、图章替换、数据填入等核心功能完全可在浏览器本地正常运行使用，请放心操作！）");
+        }
         let errMsg = "AI 润色优化失败，请稍后重试。";
         try {
           const errData = await res.json();
