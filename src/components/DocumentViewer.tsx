@@ -367,6 +367,14 @@ export default function DocumentViewer({ template, values }: DocumentViewerProps
       return (
         <div className="w-full flex flex-col gap-1 word-high-fidelity-component-view">
           <style dangerouslySetInnerHTML={{ __html: `
+            .word-high-fidelity-component-view .docx-wrapper {
+              background: transparent !important;
+              padding: 0 !important;
+              display: flex !important;
+              flex-direction: column !important;
+              align-items: center !important;
+              width: 100% !important;
+            }
             .word-high-fidelity-component-view .docx-rendered-page-preview {
               background: white !important;
               box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1) !important;
@@ -376,6 +384,7 @@ export default function DocumentViewer({ template, values }: DocumentViewerProps
               max-width: 100% !important;
               box-sizing: border-box !important;
               position: relative !important;
+              overflow: hidden !important;
             }
             .word-high-fidelity-component-view .docx-rendered-page-preview::after {
               content: "微软 Word 官方高保真预览 - A4 分页";
@@ -386,6 +395,54 @@ export default function DocumentViewer({ template, values }: DocumentViewerProps
               color: #94a3b8;
               font-family: sans-serif;
               pointer-events: none;
+            }
+            /* Resolve absolute/float wrappers that cause images to overlap standard elements */
+            .word-high-fidelity-component-view [style*="position: absolute"]:has(img),
+            .word-high-fidelity-component-view [style*="position: absolute"]:has(svg) {
+              position: relative !important;
+              left: auto !important;
+              right: auto !important;
+              top: auto !important;
+              bottom: auto !important;
+              display: block !important;
+              margin: 1.5rem auto !important;
+              max-width: 100% !important;
+              height: auto !important;
+              float: none !important;
+              clear: both !important;
+            }
+            /* Prevent non-absolute images from overstretching vertically or horizontally */
+            .word-high-fidelity-component-view img {
+              max-width: 100% !important;
+              height: auto !important;
+              max-height: 400px !important;
+              object-fit: contain !important;
+              display: block !important;
+              margin: 0.75rem auto !important;
+            }
+            /* Ensure tables automatically auto-fit parent containers */
+            .word-high-fidelity-component-view table {
+              width: 100% !important;
+              max-width: 100% !important;
+              table-layout: auto !important;
+              border-collapse: collapse !important;
+              margin: 1.5rem 0 !important;
+            }
+            .word-high-fidelity-component-view td,
+            .word-high-fidelity-component-view th {
+              word-break: break-word !important;
+              word-wrap: break-word !important;
+              overflow-wrap: break-word !important;
+              white-space: normal !important;
+              padding: 6px 8px !important;
+            }
+            .word-high-fidelity-component-view p,
+            .word-high-fidelity-component-view section,
+            .word-high-fidelity-component-view h1,
+            .word-high-fidelity-component-view h2,
+            .word-high-fidelity-component-view h3 {
+              clear: both !important;
+              word-break: break-word !important;
             }
           `}} />
           <div ref={liveDocxContainerRef} className="w-full" />
@@ -433,10 +490,21 @@ export default function DocumentViewer({ template, values }: DocumentViewerProps
                 text-align: left;
                 vertical-align: middle;
                 line-height: 1.6 !important;
+                word-break: break-word !important;
+                word-wrap: break-word !important;
+                overflow-wrap: break-word !important;
               }
               .mammoth-preview th {
                 background-color: #f1f5f9 !important;
                 font-weight: bold !important;
+              }
+              .mammoth-preview img {
+                max-width: 100% !important;
+                height: auto !important;
+                max-height: 480px !important;
+                object-fit: contain !important;
+                display: block !important;
+                margin: 1.5rem auto !important;
               }
               .mammoth-preview p {
                 margin-bottom: 0.85rem !important;
@@ -675,43 +743,15 @@ export default function DocumentViewer({ template, values }: DocumentViewerProps
         </div>
 
         {/* Toolbar of Action Buttons */}
-        <div className="flex items-center gap-1.5">
-          {/* Toggle Free Editing */}
-          <button
-            onClick={() => setIsFreeEditing(!isFreeEditing)}
-            title={isFreeEditing ? "关闭自由编辑，恢复与左侧表单同步" : "开启自由编辑，直接在纸张上追加文字"}
-            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer pointer-events-auto ${
-              isFreeEditing
-                ? "bg-amber-100 text-amber-800 border border-amber-200 hover:bg-amber-200"
-                : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50"
-            }`}
-          >
-            <Edit2 className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">{isFreeEditing ? "表单同步" : "自由修改"}</span>
-          </button>
-
-          {/* Copy Text */}
-          <button
-            onClick={handleCopy}
-            className="inline-flex items-center justify-center h-8.5 w-8.5 rounded-lg bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 transition-all cursor-pointer pointer-events-auto"
-            title="复制完稿纯文本"
-          >
-            {copied ? <Check className="h-4 w-4 text-emerald-600" /> : <Copy className="h-4 w-4" />}
-          </button>
-
-          {/* Trigger Print Modal */}
-          <button
-            onClick={handlePrint}
-            className="inline-flex items-center justify-center h-8.5 w-8.5 rounded-lg bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 transition-all cursor-pointer pointer-events-auto"
-            title="打印当前页 (PDF)"
-          >
-            <Printer className="h-4 w-4" />
-          </button>
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] sm:text-xs font-medium text-amber-700 bg-amber-50/70 border border-amber-200 px-3 py-1.5 rounded-lg select-none">
+            ⚠️ 预览功能仅作预览，具体成品请导出
+          </span>
 
           {/* Export and download DOCX */}
           <button
             onClick={handleExportWord}
-            className="inline-flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded px-3 py-1.5 text-xs font-bold shadow-sm shadow-blue-200 transition-all cursor-pointer pointer-events-auto"
+            className="inline-flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-3.5 py-1.5 text-xs font-bold shadow-xs shadow-blue-200 transition-all cursor-pointer pointer-events-auto shrink-0"
             id="btn-export-word"
           >
             <Download className="h-3.5 w-3.5" />
