@@ -380,11 +380,15 @@ export default function DocumentViewer({ template, values }: DocumentViewerProps
               box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1) !important;
               border: 1px solid #e2e8f0 !important;
               margin: 0 auto 1.5rem auto !important;
-              padding: 4rem !important;
-              max-width: 100% !important;
+              padding: 4.5rem 4rem 4rem 4rem !important;
+              width: 100% !important;
+              max-width: 794px !important;
+              aspect-ratio: 210 / 297 !important;
               box-sizing: border-box !important;
               position: relative !important;
               overflow: hidden !important;
+              display: flex !important;
+              flex-direction: column !important;
             }
             .word-high-fidelity-component-view .docx-rendered-page-preview::after {
               content: "微软 Word 官方高保真预览 - A4 分页";
@@ -398,7 +402,9 @@ export default function DocumentViewer({ template, values }: DocumentViewerProps
             }
             /* Resolve absolute/float wrappers that cause images to overlap standard elements */
             .word-high-fidelity-component-view [style*="position: absolute"]:has(img),
-            .word-high-fidelity-component-view [style*="position: absolute"]:has(svg) {
+            .word-high-fidelity-component-view [style*="position: absolute"]:has(svg),
+            .word-high-fidelity-component-view [style*="position:absolute"]:has(img),
+            .word-high-fidelity-component-view [style*="position:absolute"]:has(svg) {
               position: relative !important;
               left: auto !important;
               right: auto !important;
@@ -410,6 +416,17 @@ export default function DocumentViewer({ template, values }: DocumentViewerProps
               height: auto !important;
               float: none !important;
               clear: both !important;
+            }
+            /* Fallback reset for any absolutely positioned tags inside the preview that hold images */
+            .word-high-fidelity-component-view div[style*="position: absolute"] img,
+            .word-high-fidelity-component-view div[style*="position:absolute"] img,
+            .word-high-fidelity-component-view span[style*="position: absolute"] img,
+            .word-high-fidelity-component-view span[style*="position:absolute"] img {
+              position: relative !important;
+              top: auto !important;
+              left: auto !important;
+              right: auto !important;
+              bottom: auto !important;
             }
             /* Prevent non-absolute images from overstretching vertically or horizontally */
             .word-high-fidelity-component-view img {
@@ -549,7 +566,7 @@ export default function DocumentViewer({ template, values }: DocumentViewerProps
         {paginatedPages.map((pageLines, pageIdx) => (
           <div 
             key={pageIdx} 
-            className="bg-white max-w-3xl w-full min-h-[1050px] shadow-lg border border-slate-200 p-8 sm:p-12 relative flex flex-col justify-between"
+            className="bg-white max-w-3xl w-full aspect-[210/297] shadow-lg border border-slate-200 p-8 sm:p-12 relative flex flex-col justify-between overflow-hidden"
           >
             <div className="font-sans text-slate-800 leading-relaxed text-xs">
               {/* Header inside each page */}
