@@ -22,6 +22,38 @@ export default function DocumentViewer({ template, values }: DocumentViewerProps
   const [docxRenderError, setDocxRenderError] = useState<string | null>(null);
   const [isRenderingDocx, setIsRenderingDocx] = useState(false);
 
+  const previewScrollContainerRef = useRef<HTMLDivElement>(null);
+  const [zoomFactor, setZoomFactor] = useState(1);
+
+  // Dynamically calculate scale factor so that high fidelity A4 page fits exactly in the container
+  useEffect(() => {
+    if (!previewScrollContainerRef.current) return;
+    const updateZoom = () => {
+      const el = previewScrollContainerRef.current;
+      if (!el) return;
+      const containerWidth = el.getBoundingClientRect().width;
+      // Subtract margins/padding (e.g., 64px total for p-8 on both sides)
+      const availableWidth = containerWidth - 64;
+      const targetWidth = 794; // Standard pixel width of A4 page
+      if (availableWidth < targetWidth && availableWidth > 0) {
+        setZoomFactor(availableWidth / targetWidth);
+      } else {
+        setZoomFactor(1);
+      }
+    };
+
+    updateZoom();
+
+    const resizeObserver = new ResizeObserver(() => {
+      updateZoom();
+    });
+    resizeObserver.observe(previewScrollContainerRef.current);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [template.docxBase64]);
+
   // Compile template text based on active values
   const compiledContent = useMemo(() => {
     let text = template.contentTemplate;
@@ -305,6 +337,7 @@ export default function DocumentViewer({ template, values }: DocumentViewerProps
                     const img = document.createElement("img");
                     img.src = base64;
                     img.alt = key;
+                    img.className = "custom-replaced-image";
                     
                     const isSeal = key.toLowerCase().includes("seal") || key.toLowerCase().includes("stamp") || key.toLowerCase().includes("章");
                     if (isSeal) {
@@ -365,104 +398,87 @@ export default function DocumentViewer({ template, values }: DocumentViewerProps
     // 1. High-fidelity dynamic in-browser DOCX preview
     if (template.docxBase64) {
       return (
-        <div className="w-full flex flex-col gap-1 word-high-fidelity-component-view">
-          <style dangerouslySetInnerHTML={{ __html: `
-            .word-high-fidelity-component-view .docx-wrapper {
-              background: transparent !important;
-              padding: 0 !important;
-              display: flex !important;
-              flex-direction: column !important;
-              align-items: center !important;
-              width: 100% !important;
-            }
-            .word-high-fidelity-component-view .docx-rendered-page-preview {
-              background: white !important;
-              box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1) !important;
-              border: 1px solid #e2e8f0 !important;
-              margin: 0 auto 1.5rem auto !important;
-              padding: 4.5rem 4rem 4rem 4rem !important;
-              width: 100% !important;
-              max-width: 794px !important;
-              aspect-ratio: 210 / 297 !important;
-              box-sizing: border-box !important;
-              position: relative !important;
-              overflow: hidden !important;
-              display: flex !important;
-              flex-direction: column !important;
-            }
-            .word-high-fidelity-component-view .docx-rendered-page-preview::after {
-              content: "微软 Word 官方高保真预览 - A4 分页";
-              position: absolute;
-              bottom: 1.5rem;
-              right: 4rem;
-              font-size: 8px;
-              color: #94a3b8;
-              font-family: sans-serif;
-              pointer-events: none;
-            }
-            /* Resolve absolute/float wrappers that cause images to overlap standard elements */
-            .word-high-fidelity-component-view [style*="position: absolute"]:has(img),
-            .word-high-fidelity-component-view [style*="position: absolute"]:has(svg),
-            .word-high-fidelity-component-view [style*="position:absolute"]:has(img),
-            .word-high-fidelity-component-view [style*="position:absolute"]:has(svg) {
-              position: relative !important;
-              left: auto !important;
-              right: auto !important;
-              top: auto !important;
-              bottom: auto !important;
-              display: block !important;
-              margin: 1.5rem auto !important;
-              max-width: 100% !important;
-              height: auto !important;
-              float: none !important;
-              clear: both !important;
-            }
-            /* Fallback reset for any absolutely positioned tags inside the preview that hold images */
-            .word-high-fidelity-component-view div[style*="position: absolute"] img,
-            .word-high-fidelity-component-view div[style*="position:absolute"] img,
-            .word-high-fidelity-component-view span[style*="position: absolute"] img,
-            .word-high-fidelity-component-view span[style*="position:absolute"] img {
-              position: relative !important;
-              top: auto !important;
-              left: auto !important;
-              right: auto !important;
-              bottom: auto !important;
-            }
-            /* Prevent non-absolute images from overstretching vertically or horizontally */
-            .word-high-fidelity-component-view img {
-              max-width: 100% !important;
-              height: auto !important;
-              max-height: 400px !important;
-              object-fit: contain !important;
-              display: block !important;
-              margin: 0.75rem auto !important;
-            }
-            /* Ensure tables automatically auto-fit parent containers */
-            .word-high-fidelity-component-view table {
-              width: 100% !important;
-              max-width: 100% !important;
-              table-layout: auto !important;
-              border-collapse: collapse !important;
-              margin: 1.5rem 0 !important;
-            }
-            .word-high-fidelity-component-view td,
-            .word-high-fidelity-component-view th {
-              word-break: break-word !important;
-              word-wrap: break-word !important;
-              overflow-wrap: break-word !important;
-              white-space: normal !important;
-              padding: 6px 8px !important;
-            }
-            .word-high-fidelity-component-view p,
-            .word-high-fidelity-component-view section,
-            .word-high-fidelity-component-view h1,
-            .word-high-fidelity-component-view h2,
-            .word-high-fidelity-component-view h3 {
-              clear: both !important;
-              word-break: break-word !important;
-            }
-          `}} />
-          <div ref={liveDocxContainerRef} className="w-full" />
+        <div className="w-full flex justify-center items-start overflow-visible">
+          <div 
+            className="w-full flex flex-col gap-1 word-high-fidelity-component-view"
+            style={{
+              width: "794px",
+              minWidth: "794px",
+              zoom: zoomFactor,
+            }}
+          >
+            <style dangerouslySetInnerHTML={{ __html: `
+              .word-high-fidelity-component-view .docx-wrapper {
+                background: transparent !important;
+                padding: 0 !important;
+                display: flex !important;
+                flex-direction: column !important;
+                align-items: center !important;
+                width: 100% !important;
+              }
+              .word-high-fidelity-component-view .docx-wrapper > section {
+                background: white !important;
+                box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1) !important;
+                border: 1px solid #e2e8f0 !important;
+                margin: 0 auto 1.5rem auto !important;
+                width: 794px !important;
+                height: 1123px !important;
+                box-sizing: border-box !important;
+                position: relative !important;
+                overflow: hidden !important;
+                display: flex !important;
+                flex-direction: column !important;
+              }
+              .word-high-fidelity-component-view .docx-wrapper > section::after {
+                content: "微软 Word 官方高保真预览 - A4 分页";
+                position: absolute;
+                bottom: 1.5rem;
+                right: 4rem;
+                font-size: 8px;
+                color: #94a3b8;
+                font-family: sans-serif;
+                pointer-events: none;
+              }
+              /* Prevent non-absolute images from overstretching vertically or horizontally */
+              .word-high-fidelity-component-view img:not(.custom-replaced-image) {
+                max-width: 100% !important;
+              }
+              .word-high-fidelity-component-view img.custom-replaced-image {
+                display: inline-block !important;
+                vertical-align: middle !important;
+                object-fit: contain !important;
+                background-color: transparent !important;
+                border: 1px dashed rgba(239, 68, 68, 0.4) !important;
+                border-radius: 4px !important;
+                box-sizing: border-box !important;
+              }
+              /* Ensure tables automatically auto-fit parent containers */
+              .word-high-fidelity-component-view table {
+                width: 100% !important;
+                max-width: 100% !important;
+                table-layout: auto !important;
+                border-collapse: collapse !important;
+                margin: 1.5rem 0 !important;
+              }
+              .word-high-fidelity-component-view td,
+              .word-high-fidelity-component-view th {
+                word-break: break-word !important;
+                word-wrap: break-word !important;
+                overflow-wrap: break-word !important;
+                white-space: normal !important;
+                padding: 6px 8px !important;
+              }
+              .word-high-fidelity-component-view p,
+              .word-high-fidelity-component-view section,
+              .word-high-fidelity-component-view h1,
+              .word-high-fidelity-component-view h2,
+              .word-high-fidelity-component-view h3 {
+                clear: both !important;
+                word-break: break-word !important;
+              }
+            `}} />
+            <div ref={liveDocxContainerRef} className="w-full" />
+          </div>
         </div>
       );
     }
@@ -778,7 +794,7 @@ export default function DocumentViewer({ template, values }: DocumentViewerProps
       </div>
 
       {/* Embedded Document Canvas Paper Sheet */}
-      <div className="flex-1 overflow-y-auto p-8 flex justify-center items-start min-h-[500px]">
+      <div ref={previewScrollContainerRef} className="flex-1 overflow-y-auto p-8 flex justify-center items-start min-h-[500px]">
         <div id="printable-document" className="w-full max-w-3xl flex flex-col items-center">
           {isFreeEditing ? (
             <div className="bg-white w-full min-h-[1100px] h-auto shadow-2xl border border-slate-200/80 p-8 sm:p-12 md:p-14 relative">
